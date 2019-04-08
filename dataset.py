@@ -40,8 +40,8 @@ class BRCDataset(object):
             # self.logger.info('Test set size: {} questions.'.format(len(self.test_set)))
             print('Test set size: {} questions.'.format(len(self.test_set)))
 
-        self.test_set = self.train_set[int(0.8 * len(self.train_set)):]
-        self.train_set = self.train_set[:int(0.8 * len(self.train_set))]
+        self.test_set = self.train_set[int(0.9 * len(self.train_set)):]
+        self.train_set = self.train_set[:int(0.9 * len(self.train_set))]
 
     def _load_dataset(self, data_path, train=False):
         """
@@ -91,7 +91,7 @@ class BRCDataset(object):
                 data_set.append(sample)
         return data_set
 
-    def _one_mini_batch(self, data, indices, pad_id):
+    def _one_mini_batch(self, data, indices, pad_id, train=False):
         """
         Get one mini batch
         Args:
@@ -109,31 +109,40 @@ class BRCDataset(object):
                       'start_id': [],
                       'end_id': [],
                       'is_selected': []}
-        max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
-        max_passage_num = min(self.max_p_num, max_passage_num)
-        for sidx, sample in enumerate(batch_data['raw_data']):
-            # # 每个问题5个回答，不足5个用0补足
-            # for pidx in range(max_passage_num):
-            #     if pidx < len(sample['passages']):
-            #         batch_data['question_token_ids'].append(sample['question_token_ids'])
-            #         batch_data['question_length'].append(len(sample['question_token_ids']))
-            #         passage_token_ids = sample['passages'][pidx]['passage_token_ids']
-            #         batch_data['passage_token_ids'].append(passage_token_ids)
-            #         batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
-            #     else:
-            #         batch_data['question_token_ids'].append([])
-            #         batch_data['question_length'].append(0)
-            #         batch_data['passage_token_ids'].append([])
-            #         batch_data['passage_length'].append(0)
-            batch_data['question_token_ids'].append(sample['question_token_ids'])
-            batch_data['question_length'].append(len(sample['question_token_ids']))
-            passage_token_ids = sample['passages'][sample['answer_passages'][0]]['passage_token_ids']
-            batch_data['passage_token_ids'].append(passage_token_ids)
-            batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
-            if sample['passages'][sample['answer_passages'][0]]['is_selected']:
-                batch_data['is_selected'].append(1)
-            else:
-                batch_data['is_selected'].append(0)
+        if train:
+            for sidx, sample in enumerate(batch_data['raw_data']):
+                # 暂时只使用答案所在的回答
+                batch_data['question_token_ids'].append(sample['question_token_ids'])
+                batch_data['question_length'].append(len(sample['question_token_ids']))
+                passage_token_ids = sample['passages'][sample['answer_passages'][0]]['passage_token_ids']
+                batch_data['passage_token_ids'].append(passage_token_ids)
+                batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
+                if sample['passages'][sample['answer_passages'][0]]['is_selected']:
+                    batch_data['is_selected'].append(1)
+                else:
+                    batch_data['is_selected'].append(0)
+        else:
+            max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
+            max_passage_num = min(self.max_p_num, max_passage_num)
+            for sidx, sample in enumerate(batch_data['raw_data']):
+                for pidx in range(max_passage_num):
+                    if pidx < len(sample['passages']):
+                        batch_data['question_token_ids'].append(sample['question_token_ids'])
+                        batch_data['question_length'].append(len(sample['question_token_ids']))
+                        passage_token_ids = sample['passages'][pidx]['passage_token_ids']
+                        batch_data['passage_token_ids'].append(passage_token_ids)
+                        batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
+                        # if dev:
+                        #     if sample['passages'][pidx]['is_selected']:
+                        #         batch_data['is_selected'].append(1)
+                        #     else:
+                        #         batch_data['is_selected'].append(0)
+                    else:
+                        batch_data['question_token_ids'].append([])
+                        batch_data['question_length'].append(0)
+                        batch_data['passage_token_ids'].append([])
+                        batch_data['passage_length'].append(0)
+
         batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id)
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
@@ -211,8 +220,10 @@ class BRCDataset(object):
         Returns:
             a generator for all batches
         """
+        train = 0
         if set_name == 'train':
             data = self.train_set
+            train = 1
         elif set_name == 'dev':
             data = self.dev_set
         elif set_name == 'test':
@@ -225,4 +236,4 @@ class BRCDataset(object):
             np.random.shuffle(indices)
         for batch_start in np.arange(0, data_size, batch_size):
             batch_indices = indices[batch_start: batch_start + batch_size]
-            yield self._one_mini_batch(data, batch_indices, pad_id)
+            yield self._one_mini_batch(data, batch_indices, pad_id, train)

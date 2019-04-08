@@ -82,7 +82,7 @@ class BiDAF(nn.Module):
 
         self.dropout = nn.Dropout(p=args.dropout)
 
-    def forward(self, p, q):
+    def forward(self, p, q, device):
         # TODO: More memory-efficient architecture
 
         """
@@ -152,6 +152,14 @@ class BiDAF(nn.Module):
 
             return p1, p2
 
+        index = []
+        for i, entry in enumerate(q):
+            if sum(entry) != 0:
+                index.append(i)
+        index = torch.LongTensor(index).to(device)
+        q = torch.index_select(q, 0, index)
+        p = torch.index_select(p, 0, index)
+
         # get mask
         q_mask = torch.ne(q, 0).float()  # batch_size x padded_q_len
         p_mask = torch.ne(p, 0).float()  # batch_size x padded_p_len
@@ -168,7 +176,7 @@ class BiDAF(nn.Module):
         #     q_output = torch.nn.functional.dropout(q_output, p=self.dropout_prob, training=self.training)
 
         # p = p.transpose(0, 1).contiguous()  # padded_p_len x batch_size
-        p_emb = self.word_embedding(p)  # padded_p_len x batch_size x embed_dim
+        p_emb = self.word_embedding(p)  # batch_size x padded_p_len x embed_dim
         p_output = self.p_encode(p_emb, p_lenth)
 
         # p_output = p_output.transpose(0, 1).contiguous()
